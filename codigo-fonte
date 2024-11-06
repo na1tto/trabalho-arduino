@@ -1,0 +1,172 @@
+#include <Adafruit_LiquidCrystal.h> // Biblioteca para o LCD
+
+#define LED_PIN 3
+#define BUTTON_PIN 2
+#define sensorPin A0
+#define debounceDelay 50 // Delay para debounce
+
+Adafruit_LiquidCrystal lcd(0);
+
+const int LED1 = 3;
+int motor = 9;
+char estadoFans[10];
+char estadoLed[10];
+
+// Estado inicial do botão
+bool estadoBotao = false;
+
+// Última leitura do botão
+bool estadoBotaoAnterior = false;
+// Debounce timing
+unsigned long ultimaLeituraBotao = 0;
+
+void setup() {
+  Serial.begin(9600);
+  pinMode(A2, INPUT);
+  pinMode(A1, OUTPUT);
+  
+  pinMode(LED1, OUTPUT);
+  digitalWrite(LED1, LOW);
+  strcpy(estadoLed, "BOMBA OFF");
+  
+  pinMode(BUTTON_PIN, INPUT);
+  
+  pinMode(motor, OUTPUT);
+  analogWrite(motor, 255);
+  strcpy(estadoFans, "FANS OFF!");
+  
+  // Inicializa o LCD
+  lcd.begin(16, 2);
+  
+  // Estado inicial do sistema
+  lcd.print("LEITURAS OFF!");
+  lcd.blink();
+  delay(2000);
+  lcd.clear();
+}
+
+int tempRead(float temp) {
+  lcd.clear();
+  lcd.print("Temperatura: ");
+  verificarBotao();
+  delay(500);  // Reduzido para 0,5 segundo
+
+  lcd.clear();
+  lcd.print(temp);
+  lcd.print("C");
+  verificarBotao();
+  delay(500);  // Reduzido para 0,5 segundo
+
+  lcd.clear();
+  return temp;
+}
+
+int moistureRead(int umidade) {
+  digitalWrite(A1, HIGH);
+  delay(10);
+  lcd.clear();
+  lcd.print("Umidade:");
+  verificarBotao(); 
+  delay(500); // Reduzido para 0,5 segundo
+
+  lcd.clear();
+  lcd.print(umidade);
+  lcd.print("%");
+  verificarBotao();
+  delay(500); // Reduzido para 0,5 segundo
+
+  lcd.clear();
+  return umidade;
+}
+
+void fansState(char estadoFans[], float temp) {
+  if (temp > 30) {
+    strcpy(estadoFans, "FANS ON!");
+    analogWrite(motor, 0);
+  } else if (temp < 25) {
+    strcpy(estadoFans, "FANS OFF!");
+    analogWrite(motor, 255);
+  }
+  
+  lcd.clear();
+  lcd.print(estadoFans);
+  verificarBotao();
+  delay(500);  // Reduzido para 0,5 segundo
+
+  lcd.clear();
+}
+
+void ledState(char estadoLed[], int umidade) {
+  if (umidade < 40) {
+    strcpy(estadoLed, "BOMBA ON!");
+    analogWrite(LED1, HIGH);
+  } else if (umidade > 50) {
+    strcpy(estadoLed, "BOMBA OFF!");
+    analogWrite(LED1, LOW);
+  }
+
+  lcd.clear();
+  lcd.print(estadoLed);
+  verificarBotao();
+  delay(500);  // Reduzido para 0,5 segundo
+
+  lcd.clear();
+}
+
+void verificarBotao() {
+  bool leituraAtual = digitalRead(BUTTON_PIN);
+
+  if (leituraAtual == HIGH && !estadoBotaoAnterior && (millis() - ultimaLeituraBotao > debounceDelay)) {
+    estadoBotao = !estadoBotao;
+    lcd.clear();
+
+    if (estadoBotao) {
+      lcd.print("Leituras ON");
+    } else {
+      lcd.print("LEITURAS OFF");
+      analogWrite(motor, 255); // Desativa motor
+      digitalWrite(LED1, LOW); // Desativa LED
+    }
+
+    ultimaLeituraBotao = millis();
+    delay(500); // Ajustado para 0,5 segundo para economia de tempo
+    lcd.clear();
+  }
+
+  estadoBotaoAnterior = leituraAtual;
+}
+
+void loop() {
+  verificarBotao();
+
+  if (estadoBotao) {
+    unsigned long startTime = millis(); // Marca o tempo inicial do loop
+
+    // Leitura do TMP36 (temperatura)
+    float temp = 0;
+    int leitura = analogRead(sensorPin);
+    float voltagem = leitura * (5000 / 1024.0);
+    temp = (voltagem - 500) / 10;
+
+    tempRead(temp);
+    if (!estadoBotao) return;
+
+    // Definição e print do ESTADO das fans
+    fansState(estadoFans, temp);
+    if (!estadoBotao) return;
+
+    // Leitura do Sensor de umidade
+    int umidade = map(analogRead(A2), 0, 872, 0, 100);
+    moistureRead(umidade);
+    if (!estadoBotao) return;
+
+    // Definição e print do ESTADO da bomba
+    ledState(estadoLed, umidade);
+    if (!estadoBotao) return;
+
+    unsigned long elapsedTime = millis() - startTime; // Tempo decorrido
+    if (elapsedTime < 5000) {
+      delay(5000 - elapsedTime); // Atraso para completar 5 segundos
+    }
+  }
+}
